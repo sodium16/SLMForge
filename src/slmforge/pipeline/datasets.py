@@ -998,6 +998,21 @@ def read_local_rows(
     return rows
 
 
+def _resolve_upload_path(raw_path: str, settings: Any) -> Path:
+    """Resolve an `upload:<path>` candidate id, refusing anything outside `upload_root`.
+
+    `raw_path` comes straight from request params, so without this check a caller
+    could pass `upload:C:/anything.csv` and have it ingested as training data —
+    an arbitrary-file-read, not just an untrusted-content problem.
+    """
+    upload_root = Path(settings.upload_root).resolve()
+    path = Path(raw_path)
+    path = (upload_root / path).resolve() if not path.is_absolute() else path.resolve()
+    if path != upload_root and upload_root not in path.parents:
+        raise ValueError(f"Upload path must be inside the upload root ({upload_root}).")
+    return path
+
+
 def _row_from(record: dict[str, Any], text_cols: list[str], label_col: str) -> dict[str, Any]:
     parts = [str(record.get(col) or "") for col in text_cols]
     return {
@@ -1500,7 +1515,7 @@ class DatasetStage(Stage):
         columns, _label_map, entry = self._columns_for(ctx, spec, candidate_id)
 
         if candidate_id.startswith("upload:"):
-            path = Path(candidate_id.removeprefix("upload:"))
+            path = _resolve_upload_path(candidate_id.removeprefix("upload:"), ctx.settings)
             rows = read_local_rows(path, columns=columns, limit=fetch_cap)
             provenance = Provenance(
                 source="user_upload",

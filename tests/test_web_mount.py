@@ -55,3 +55,18 @@ def test_serves_built_spa_with_client_side_routing(tmp_path: Path) -> None:
 
         # The API still wins over the catch-all route.
         assert client.get("/api/health").json()["status"] == "ok"
+
+
+def test_spa_fallback_rejects_path_traversal(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><div id=root></div>", encoding="utf-8")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("do not serve me", encoding="utf-8")
+
+    app = create_app(web_dist=dist)
+    with TestClient(app) as client:
+        response = client.get("/../secret.txt")
+        assert response.status_code == 200
+        assert "root" in response.text
+        assert "do not serve me" not in response.text

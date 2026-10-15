@@ -67,7 +67,10 @@ def _ctx(
 
 
 def _upload(tmp_path: Path, rows: list[dict]) -> str:
-    path = tmp_path / "upload.jsonl"
+    # Must live under settings.upload_root: the stage refuses upload: paths outside it.
+    upload_dir = Path(settings.upload_root)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    path = upload_dir / f"{tmp_path.name}-upload.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
     return f"upload:{path.as_posix()}"
 
@@ -302,6 +305,14 @@ def test_upload_type_and_size_are_guarded(tmp_path: Path) -> None:
     missing = tmp_path / "nope.jsonl"
     with pytest.raises(FileNotFoundError):
         ds.read_local_rows(missing, columns={"text": ["a"], "label": "b"}, limit=1)
+
+
+def test_upload_path_outside_the_upload_root_is_refused(tmp_path: Path) -> None:
+    """An `upload:` candidate id is attacker-controlled; it must not read any file."""
+    outside = tmp_path / "secret.jsonl"
+    outside.write_text(json.dumps({"text": "x", "label": "y"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="upload root"):
+        ds._resolve_upload_path(outside.as_posix(), settings)
 
 
 # --- scoring and the catalog ----------------------------------------------

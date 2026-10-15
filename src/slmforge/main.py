@@ -85,8 +85,11 @@ def _mount_web(app: FastAPI, web_dist: Path = WEB_DIST) -> None:
         def spa_fallback(path: str) -> Response:
             # Annotate as Response: a union of response classes is not a valid
             # FastAPI response model and fails at import time.
-            candidate = web_dist / path
-            if path and candidate.is_file():
+            root = web_dist.resolve()
+            candidate = (root / path).resolve()
+            # `path` is attacker-controlled; without this check `../../.env` would
+            # escape web_dist and FileResponse would happily serve it.
+            if path and root in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
             return FileResponse(index_html)
 
